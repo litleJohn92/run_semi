@@ -49,14 +49,51 @@ class _ProgressionChartState extends State<ProgressionChart> {
   ];
   static const _weekdays = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
+  // Zoom max au pincement (vue Semaine : pas de zoom, 7 jours tiennent déjà).
+  static const _maxZoomByPeriod = {
+    _ChartPeriod.week: 1.0,
+    _ChartPeriod.month: 4.0,
+    _ChartPeriod.quarter: 8.0,
+  };
+
   _ChartPeriod _period = _ChartPeriod.week;
   late DateTime _rangeEnd;
+
+  // Contrôleur de zoom partagé : les 5 courbes zooment et défilent ensemble.
+  final _zoomController = TransformationController();
+  double _zoom = 1;
 
   @override
   void initState() {
     super.initState();
     _rangeEnd = _today;
+    _zoomController.addListener(_onZoomChanged);
   }
+
+  @override
+  void dispose() {
+    _zoomController.removeListener(_onZoomChanged);
+    _zoomController.dispose();
+    super.dispose();
+  }
+
+  void _onZoomChanged() {
+    final zoom = _zoomController.value.getMaxScaleOnAxis();
+    // On ne reconstruit que si la densité des dates de l'axe change.
+    if (_bottomIntervalFor(zoom) != _bottomIntervalFor(_zoom)) {
+      setState(() => _zoom = zoom);
+    } else {
+      _zoom = zoom;
+    }
+  }
+
+  void _resetZoom() {
+    _zoomController.value = Matrix4.identity();
+    _zoom = 1;
+  }
+
+  bool get _canZoom => _maxZoomByPeriod[_period]! > 1;
+  bool get _isZoomed => _zoom > 1.01;
 
   DateTime get _today {
     final now = DateTime.now();
@@ -72,6 +109,7 @@ class _ProgressionChartState extends State<ProgressionChart> {
       var next = _rangeEnd.add(Duration(days: days));
       if (next.isAfter(_today)) next = _today;
       _rangeEnd = next;
+      _resetZoom();
     });
   }
 
@@ -79,6 +117,7 @@ class _ProgressionChartState extends State<ProgressionChart> {
     setState(() {
       _period = p;
       _rangeEnd = _today;
+      _resetZoom();
     });
   }
 
@@ -199,11 +238,22 @@ class _ProgressionChartState extends State<ProgressionChart> {
         : '${_fmt(start)} ${start.year} – ${_fmt(end)} ${end.year}';
   }
 
-  double get _bottomInterval => switch (_period) {
+  double get _baseBottomInterval => switch (_period) {
     _ChartPeriod.week => 1,
     _ChartPeriod.month => 7,
     _ChartPeriod.quarter => 14,
   };
+
+  // Plus on zoome, plus les dates de l'axe se resserrent (jusqu'à une par jour).
+  double _bottomIntervalFor(double zoom) {
+    final raw = _baseBottomInterval / zoom;
+    for (final step in const [1.0, 2.0, 3.0, 7.0, 14.0]) {
+      if (step >= raw) return step;
+    }
+    return 14;
+  }
+
+  double get _bottomInterval => _bottomIntervalFor(_zoom);
 
   void _openPointDetail(_MetricPoint point) {
     if (point.sessionLog != null) {
@@ -260,6 +310,27 @@ class _ProgressionChartState extends State<ProgressionChart> {
             child: Icon(Icons.chevron_right, color: _canGoNext ? AppTheme.textSecondary : AppTheme.textMuted, size: 20),
           ),
         ]),
+
+        if (_canZoom)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Text(
+                _isZoomed ? 'Zoom ×${_zoom.toStringAsFixed(1)}' : 'Pincez une courbe pour zoomer',
+                style: Theme.of(context).textTheme.labelSmall!.copyWith(color: AppTheme.textMuted, fontSize: 10),
+              ),
+              if (_isZoomed)
+                TextButton(
+                  onPressed: () => setState(_resetZoom),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(44, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    foregroundColor: AppTheme.accentPrimary,
+                  ),
+                  child: const Text('Réinitialiser', style: TextStyle(fontSize: 11)),
+                ),
+            ]),
+          ),
 
         _metricSection(
           title: 'Distance (km)',
@@ -368,6 +439,12 @@ class _ProgressionChartState extends State<ProgressionChart> {
     }
 
     return LineChart(
+      transformationConfig: FlTransformationConfig(
+        scaleAxis: _canZoom ? FlScaleAxis.horizontal : FlScaleAxis.none,
+        minScale: 1,
+        maxScale: _maxZoomByPeriod[_period]!,
+        transformationController: _zoomController,
+      ),
       LineChartData(
         minX: 0,
         maxX: (_rangeDays - 1).toDouble(),
