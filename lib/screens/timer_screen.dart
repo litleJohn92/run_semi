@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../models/session.dart';
 import '../services/gps_service.dart';
+import '../services/pedometer_service.dart';
 import 'debrief_screen.dart';
 import '../theme/app_theme.dart';
 
@@ -24,8 +25,13 @@ class _TimerScreenState extends State<TimerScreen> with WidgetsBindingObserver {
   bool _paused = false;
   bool _started = false;
   bool _gpsActive = false;
+  double? _paceSecPerKm;
+  final List<double> _runPaceSamples = [];
+  StreamSubscription<double?>? _paceSub;
   Timer? _timer;
   DateTime? _phaseStartTime; // Pour recalculer après verrouillage
+  // (début, course ?) de chaque phase, pour répartir la distance course/marche
+  final List<(DateTime, bool)> _phaseStarts = [];
 
   @override
   void initState() {
@@ -75,6 +81,7 @@ class _TimerScreenState extends State<TimerScreen> with WidgetsBindingObserver {
     if (_phaseIndex < widget.session.phases.length - 1) {
       setState(() => _phaseIndex++);
       _phaseStartTime = DateTime.now().subtract(Duration(seconds: overflowSeconds));
+      _phaseStarts.add((_phaseStartTime!, _currentPhase.isRun));
       _remaining = (_currentPhase.durationSeconds - overflowSeconds).clamp(0, _currentPhase.durationSeconds);
       if (_remaining <= 0) {
         _advanceFromBackground(overflowSeconds - _currentPhase.durationSeconds);
@@ -93,11 +100,17 @@ class _TimerScreenState extends State<TimerScreen> with WidgetsBindingObserver {
       _gps.startRecording().then((_) {
         if (mounted) setState(() => _gpsActive = _gps.isRecording);
       });
+      _paceSub = PedometerService.paceStream().listen(
+          (p) {
+            _paceSecPerKm = p;
+            if (p != null && !_paused && _currentPhase.isRun) _runPaceSamples.add(p);
+          }, onError: (_) {});
     } else {
       _gps.resume();
     }
     setState(() { _started = true; _paused = false; });
     _phaseStartTime = DateTime.now();
+    _phaseStarts.add((_phaseStartTime!, _currentPhase.isRun));
     _announce();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }
@@ -148,7 +161,9 @@ class _TimerScreenState extends State<TimerScreen> with WidgetsBindingObserver {
 
   void _finish() {
     _gps.stopRecording();
+    _paceSub?.cancel();
     _speak('Bravo ! Séance terminée !');
+    final split = GpsService.splitDistance(_gps.points, _phaseStarts);
     Navigator.pushReplacement(context, MaterialPageRoute(
       builder: (_) => DebriefScreen(
         session: widget.session,
@@ -156,6 +171,9 @@ class _TimerScreenState extends State<TimerScreen> with WidgetsBindingObserver {
         routePoints: _gps.points,
         distanceLabel: _gps.distanceLabel,
         distanceMeters: _gps.totalDistanceMeters,
+        runMeters: split.run,
+        walkMeters: split.walk,
+        runPaceSecPerKm: PedometerService.averagePace(_runPaceSamples),
         startTime: _gps.startTime ?? DateTime.now(),
       ),
     ));
@@ -186,6 +204,7 @@ class _TimerScreenState extends State<TimerScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
+    _paceSub?.cancel();
     _tts.stop();
     super.dispose();
   }
@@ -257,6 +276,9 @@ class _TimerScreenState extends State<TimerScreen> with WidgetsBindingObserver {
                     style: Theme.of(context).textTheme.labelSmall!.copyWith(
                         color: _gpsActive ? AppTheme.statusSuccess : AppTheme.statusWarning)),
                 const Spacer(),
+                Text(PedometerService.formatPace(_paceSecPerKm),
+                    style: Theme.of(context).textTheme.labelSmall!.copyWith(color: AppTheme.textSecondary)),
+                if (_gpsActive) const SizedBox(width: 12),
                 if (_gpsActive)
                   Text(_gps.distanceLabel,
                       style: Theme.of(context).textTheme.labelSmall!.copyWith(color: AppTheme.textSecondary)),

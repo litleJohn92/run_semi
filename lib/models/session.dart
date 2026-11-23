@@ -101,6 +101,12 @@ class SessionLog {
   final bool completed;
   final int painLevel;
   final double distanceMeters;
+  // Distance parcourue pendant les phases de course / de marche (null pour
+  // les séances enregistrées avant ce découpage).
+  final double? runMeters;
+  final double? walkMeters;
+  // Allure moyenne en course mesurée par l'accéléromètre (s/km), null si absente.
+  final double? runPaceSecPerKm;
   final List<List<double>>? route; // [[lat, lng], ...] — null si pas de tracé GPS
 
   // Séance auto-sauvegardée avant que l'utilisateur n'ait choisi une douleur
@@ -112,6 +118,9 @@ class SessionLog {
     required this.completed,
     required this.painLevel,
     this.distanceMeters = 0,
+    this.runMeters,
+    this.walkMeters,
+    this.runPaceSecPerKm,
     this.route,
   });
 
@@ -121,6 +130,9 @@ class SessionLog {
     'completed': completed,
     'painLevel': painLevel,
     'distanceMeters': distanceMeters,
+    if (runMeters != null) 'runMeters': runMeters,
+    if (walkMeters != null) 'walkMeters': walkMeters,
+    if (runPaceSecPerKm != null) 'runPaceSecPerKm': runPaceSecPerKm,
     if (route != null) 'route': route,
   };
 
@@ -130,6 +142,9 @@ class SessionLog {
     completed: json['completed'] as bool,
     painLevel: json['painLevel'] as int,
     distanceMeters: (json['distanceMeters'] as num?)?.toDouble() ?? 0,
+    runMeters: (json['runMeters'] as num?)?.toDouble(),
+    walkMeters: (json['walkMeters'] as num?)?.toDouble(),
+    runPaceSecPerKm: (json['runPaceSecPerKm'] as num?)?.toDouble(),
     route: (json['route'] as List?)
         ?.map((p) => (p as List).map((v) => (v as num).toDouble()).toList())
         .toList(),

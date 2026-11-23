@@ -20,8 +20,9 @@ class _MetricPoint {
 }
 
 /// Courbes de progression façon "Santé" : onglets Semaine/Mois/Trimestre,
-/// navigation par flèches, 4 métriques empilées (distance, poids KB, durée,
-/// douleur du tendon) — et tap sur un point pour ouvrir le détail du jour.
+/// navigation par flèches, métriques empilées (distance, allure moyenne,
+/// durée, douleur du tendon ; poids KB masqué) — et tap sur un point pour
+/// ouvrir le détail du jour.
 class ProgressionChart extends StatefulWidget {
   final List<SessionLog> logs;
   final List<WorkoutLog> workoutLogs;
@@ -48,6 +49,12 @@ class _ProgressionChartState extends State<ProgressionChart> {
     'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
   ];
   static const _weekdays = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+  // Courbe « Poids KB » masquée (code conservé) : repasser à true pour la réafficher.
+  static const _showKbWeight = false;
+
+  // En dessous, la distance GPS d'un type de phase est trop faible pour une allure fiable.
+  static const _minPaceMeters = 50.0;
 
   // Zoom max au pincement (vue Semaine : pas de zoom, 7 jours tiennent déjà).
   static const _maxZoomByPeriod = {
@@ -147,26 +154,53 @@ class _ProgressionChartState extends State<ProgressionChart> {
     return points;
   }
 
-  // Durée prévue de la séance du programme (phase 1 ou 2), retrouvée par dayIndex.
-  int? _programMinutes(int dayIndex) {
+  // Séance du programme (phase 1 ou 2), retrouvée par dayIndex.
+  Session? _programSession(int dayIndex) {
     for (final s in [...tendiniteProgram, ...semiProgram]) {
-      if (s.dayIndex == dayIndex) return s.totalDurationMinutes;
+      if (s.dayIndex == dayIndex) return s;
     }
     return null;
   }
 
-  List<_MetricPoint> get _pacePoints {
+  int? _programMinutes(int dayIndex) => _programSession(dayIndex)?.totalDurationMinutes;
+
+  // Allure (s/km) = durée prévue des phases retenues ÷ km parcourus pendant ces phases,
+  // sauf si [measured] fournit une allure mesurée par l'accéléromètre.
+  List<_MetricPoint> _pacePointsFor(bool Function(TimerPhase) phases, double? Function(SessionLog) meters,
+      {double? Function(SessionLog)? measured}) {
     final points = <_MetricPoint>[];
     for (final log in widget.logs) {
-      final minutes = _programMinutes(log.dayIndex);
-      if (!log.completed || minutes == null || minutes <= 0 || log.distanceMeters <= 0) continue;
+      final measuredPace = measured?.call(log);
+      if (log.completed && measuredPace != null) {
+        final offset = _offsetOf(log.date);
+        if (offset != null) points.add(_MetricPoint(offset: offset, value: measuredPace, sessionLog: log));
+        continue;
+      }
+      final session = _programSession(log.dayIndex);
+      final m = meters(log);
+      if (!log.completed || session == null || m == null || m < _minPaceMeters) continue;
+      final seconds = session.phases.where(phases).fold(0, (s, p) => s + p.durationSeconds);
+      if (seconds <= 0) continue;
       final offset = _offsetOf(log.date);
       if (offset == null) continue;
-      final pace = (minutes * 60) / (log.distanceMeters / 1000);
-      points.add(_MetricPoint(offset: offset, value: pace, sessionLog: log));
+      points.add(_MetricPoint(offset: offset, value: seconds / (m / 1000), sessionLog: log));
     }
     points.sort((a, b) => a.offset.compareTo(b.offset));
     return points;
+  }
+
+  List<_MetricPoint> get _pacePoints => _pacePointsFor((_) => true, (l) => l.distanceMeters);
+  List<_MetricPoint> get _runPacePoints => _pacePointsFor((p) => p.isRun, (l) => l.runMeters,
+      measured: (l) => l.runPaceSecPerKm);
+  List<_MetricPoint> get _walkPacePoints => _pacePointsFor((p) => p.isWalk, (l) => l.walkMeters);
+
+  // Lignes ajoutées à la bulle d'allure : allures course / marche du jour.
+  String _paceDetail(int offset) {
+    String at(List<_MetricPoint> pts) {
+      final p = _pointAtOffset(pts, offset);
+      return p == null ? '–' : _formatPace(p.value);
+    }
+    return '\nCourse ${at(_runPacePoints)}\nMarche ${at(_walkPacePoints)}';
   }
 
   String _formatPace(double secondsPerKm) {
@@ -340,14 +374,17 @@ class _ProgressionChartState extends State<ProgressionChart> {
           numericAxis: true,
         ),
         _metricSection(
-          title: 'Allure moyenne (min/km)',
-          color: AppTheme.accentPrimary,
+          title: 'Allure (min/km) · moyenne ── course ┄',
+          extraPoints: _runPacePoints,
+          color: AppTheme.accentHighlight,
           points: _pacePoints,
-          valueLabel: _formatPace,
+          valueLabel: (v) => 'Moyenne ${_formatPace(v)}',
+          tooltipExtra: _paceDetail,
           zoomY: true,
           numericAxis: true,
           axisDivisor: 60,
         ),
+        if (_showKbWeight)
         _metricSection(
           title: 'Poids KB (kgs)',
           color: AppTheme.accentHighlight,
@@ -384,6 +421,8 @@ class _ProgressionChartState extends State<ProgressionChart> {
     bool numericAxis = false,
     double axisDivisor = 1,
     double? axisStep,
+    String Function(int offset)? tooltipExtra,
+    List<_MetricPoint> extraPoints = const [],
   }) {
     return Padding(
       padding: const EdgeInsets.only(top: 14),
@@ -400,7 +439,7 @@ class _ProgressionChartState extends State<ProgressionChart> {
         else
           SizedBox(
             height: 120,
-            child: _buildChart(points: points, color: color, valueLabel: valueLabel, maxYOverride: maxYOverride, zoomY: zoomY, numericAxis: numericAxis, axisDivisor: axisDivisor, axisStep: axisStep),
+            child: _buildChart(points: points, color: color, valueLabel: valueLabel, maxYOverride: maxYOverride, zoomY: zoomY, numericAxis: numericAxis, axisDivisor: axisDivisor, axisStep: axisStep, tooltipExtra: tooltipExtra, extraPoints: extraPoints),
           ),
       ]),
     );
@@ -415,9 +454,12 @@ class _ProgressionChartState extends State<ProgressionChart> {
     bool numericAxis = false,
     double axisDivisor = 1,
     double? axisStep,
+    String Function(int offset)? tooltipExtra,
+    List<_MetricPoint> extraPoints = const [],
   }) {
-    final maxVal = points.map((p) => p.value).reduce((a, b) => a > b ? a : b);
-    final minVal = points.map((p) => p.value).reduce((a, b) => a < b ? a : b);
+    final values = [...points, ...extraPoints].map((p) => p.value).toList();
+    final maxVal = values.reduce((a, b) => a > b ? a : b);
+    final minVal = values.reduce((a, b) => a < b ? a : b);
     // Allure : axe resserré autour des valeurs, sinon les variations écrasent la courbe.
     var minY = zoomY ? (minVal * 0.9).floorToDouble() : 0.0;
     var maxY = zoomY
@@ -437,7 +479,6 @@ class _ProgressionChartState extends State<ProgressionChart> {
       maxY = top * axisDivisor;
       gridInterval = step * axisDivisor;
     }
-
     return LineChart(
       transformationConfig: FlTransformationConfig(
         scaleAxis: _canZoom ? FlScaleAxis.horizontal : FlScaleAxis.none,
@@ -494,16 +535,26 @@ class _ProgressionChartState extends State<ProgressionChart> {
             dotData: const FlDotData(show: true),
             belowBarData: BarAreaData(show: true, color: color.withValues(alpha: 0.08)),
           ),
+          if (extraPoints.isNotEmpty)
+            LineChartBarData(
+              spots: extraPoints.map((p) => FlSpot(p.offset.toDouble(), p.value)).toList(),
+              isCurved: true,
+              color: AppTheme.textSecondary,
+              barWidth: 1.5,
+              dashArray: const [4, 4],
+              dotData: const FlDotData(show: true),
+            ),
         ],
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
             getTooltipColor: (_) => AppTheme.surfaceRaised,
+            // Une seule bulle par jour : celle de la courbe principale (barIndex 0).
             getTooltipItems: (spots) => spots.map((s) {
-              final point = _pointAtOffset(points, s.x.round());
+              final point = s.barIndex == 0 ? _pointAtOffset(points, s.x.round()) : null;
               if (point == null) return null;
               final date = _rangeStart.add(Duration(days: point.offset));
               return LineTooltipItem(
-                '${date.day}/${date.month}\n${valueLabel(s.y)}',
+                '${date.day}/${date.month}\n${valueLabel(point.value)}${tooltipExtra?.call(point.offset) ?? ''}',
                 Theme.of(context).textTheme.labelSmall!.copyWith(color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
               );
             }).toList(),

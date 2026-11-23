@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import '../models/session.dart';
 import '../data/tendinite_program.dart';
 import '../data/semi_program.dart';
+import '../services/pedometer_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 
@@ -64,7 +65,9 @@ void showSessionDetailDialog(BuildContext context, SessionLog log, {VoidCallback
           if (points.length >= 2)
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
+              // Largeur fixe : AlertDialog mesure sa largeur intrinsèque, que FlutterMap ne supporte pas.
               child: SizedBox(
+                width: double.maxFinite,
                 height: 180,
                 child: FlutterMap(
                   options: MapOptions(
@@ -105,6 +108,13 @@ void showSessionDetailDialog(BuildContext context, SessionLog log, {VoidCallback
           if (_paceLabel(log) != null) ...[
             Text(
               'Allure moyenne : ${_paceLabel(log)}',
+              style: Theme.of(ctx).textTheme.bodySmall!.copyWith(color: AppTheme.textPrimary),
+            ),
+            const SizedBox(height: 4),
+          ],
+          if (log.runPaceSecPerKm != null) ...[
+            Text(
+              'Allure course : ${PedometerService.formatPace(log.runPaceSecPerKm)}',
               style: Theme.of(ctx).textTheme.bodySmall!.copyWith(color: AppTheme.textPrimary),
             ),
             const SizedBox(height: 4),

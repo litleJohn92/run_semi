@@ -10,6 +10,7 @@ import '../models/session.dart';
 import '../data/tendinite_program.dart';
 import '../theme/app_theme.dart';
 import '../widgets/progression_chart.dart';
+import '../widgets/share_stats_card.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -139,6 +140,19 @@ class _StatsScreenState extends State<StatsScreen> {
                   ]),
                 ),
                 const SizedBox(height: 14),
+                // ── Partager mes stats ──────────────────────────────
+                GestureDetector(
+                  onTap: _shareStats,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      const Icon(Icons.share_outlined, size: 14, color: AppTheme.textSecondary),
+                      const SizedBox(width: 6),
+                      Text('Partager mes stats',
+                          style: Theme.of(context).textTheme.bodySmall!.copyWith(color: AppTheme.textSecondary)),
+                    ]),
+                  ),
+                ),
                 // ── Ajouter une séance manuellement ─────────────────
                 GestureDetector(
                   onTap: () => _showAddLogDialog(context),
@@ -386,6 +400,8 @@ class _StatsScreenState extends State<StatsScreen> {
       ),
     );
   }
+
+  void _shareStats() => showShareStatsDialog(context, _logs);
 
   Future<void> _exportData() async {
     try {

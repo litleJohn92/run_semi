@@ -72,6 +72,28 @@ class GpsService {
     });
   }
 
+  /// Répartit la distance entre course et marche : chaque segment GPS est
+  /// attribué à la phase en cours à l'horodatage de son point d'arrivée.
+  /// [phaseStarts] = (début de phase, est-ce de la course ?), dans l'ordre.
+  static ({double run, double walk}) splitDistance(
+      List<RoutePoint> points, List<(DateTime, bool)> phaseStarts) {
+    var run = 0.0, walk = 0.0;
+    if (phaseStarts.isEmpty) return (run: run, walk: walk);
+    for (int i = 1; i < points.length; i++) {
+      final t = points[i].timestamp;
+      final isRun = phaseStarts
+          .lastWhere((p) => !p.$1.isAfter(t), orElse: () => phaseStarts.first)
+          .$2;
+      final d = _haversine(points[i - 1].lat, points[i - 1].lng, points[i].lat, points[i].lng);
+      if (isRun) {
+        run += d;
+      } else {
+        walk += d;
+      }
+    }
+    return (run: run, walk: walk);
+  }
+
   // Fige la distance/tracé pendant une pause sans perdre l'historique
   void pause() => _paused = true;
   void resume() => _paused = false;
@@ -82,7 +104,7 @@ class GpsService {
     _subscription = null;
   }
 
-  double _haversine(double lat1, double lon1, double lat2, double lon2) {
+  static double _haversine(double lat1, double lon1, double lat2, double lon2) {
     const R = 6371000.0;
     final dLat = _toRad(lat2 - lat1);
     final dLon = _toRad(lon2 - lon1);
@@ -92,5 +114,5 @@ class GpsService {
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
-  double _toRad(double deg) => deg * pi / 180;
+  static double _toRad(double deg) => deg * pi / 180;
 }

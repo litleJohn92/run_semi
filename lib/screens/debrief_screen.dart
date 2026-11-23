@@ -7,6 +7,7 @@ import '../models/session.dart';
 import '../models/route_point.dart';
 import '../services/storage_service.dart';
 import '../services/health_service.dart';
+import '../services/pedometer_service.dart';
 import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 
@@ -16,6 +17,9 @@ class DebriefScreen extends StatefulWidget {
   final List<RoutePoint> routePoints;
   final String distanceLabel;
   final double distanceMeters;
+  final double runMeters;
+  final double walkMeters;
+  final double? runPaceSecPerKm;
   final DateTime startTime;
 
   const DebriefScreen({
@@ -25,6 +29,9 @@ class DebriefScreen extends StatefulWidget {
     required this.routePoints,
     required this.distanceLabel,
     required this.distanceMeters,
+    required this.runMeters,
+    required this.walkMeters,
+    this.runPaceSecPerKm,
     required this.startTime,
   });
 
@@ -64,6 +71,9 @@ class _DebriefScreenState extends State<DebriefScreen> {
       completed: true,
       painLevel: SessionLog.unratedPain,
       distanceMeters: widget.distanceMeters,
+      runMeters: widget.runMeters,
+      walkMeters: widget.walkMeters,
+      runPaceSecPerKm: widget.runPaceSecPerKm,
       route: _routeForLog,
     ));
     await StorageService.saveCompletion(widget.dayIndex);
@@ -160,6 +170,9 @@ class _DebriefScreenState extends State<DebriefScreen> {
       completed: true,
       painLevel: _pain!,
       distanceMeters: widget.distanceMeters,
+      runMeters: widget.runMeters,
+      walkMeters: widget.walkMeters,
+      runPaceSecPerKm: widget.runPaceSecPerKm,
       route: _routeForLog,
     ));
     await StorageService.saveCompletion(widget.dayIndex);
@@ -228,6 +241,14 @@ class _DebriefScreenState extends State<DebriefScreen> {
               Expanded(
                   child: _Stat(
                       value: widget.distanceLabel, label: 'Distance')),
+              if (widget.runPaceSecPerKm != null) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                    child: _Stat(
+                        value: PedometerService.formatPace(widget.runPaceSecPerKm)
+                            .replaceAll('/km', ''),
+                        label: 'Allure /km')),
+              ],
             ]),
             const SizedBox(height: 16),
 

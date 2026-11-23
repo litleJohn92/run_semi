@@ -30,6 +30,8 @@
 	<string>Pour lire tes données de santé</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Pour enregistrer tes séances de course dans Santé</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Pour mesurer ton allure avec l'accéléromètre</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Pour continuer l'enregistrement en arrière-plan</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

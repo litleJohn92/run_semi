@@ -8,6 +8,7 @@ import '../models/session.dart';
 import '../models/workout.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/share_stats_card.dart';
 
 class ProgramScreen extends StatefulWidget {
   const ProgramScreen({super.key});
@@ -360,7 +361,18 @@ Future<void> _showDayDetailDialog(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: AppTheme.surfaceCard,
-      title: Text(s.title, style: AppTheme.h4.copyWith(color: AppTheme.textPrimary)),
+      title: Row(children: [
+        Expanded(child: Text(s.title, style: AppTheme.h4.copyWith(color: AppTheme.textPrimary))),
+        IconButton(
+          icon: const Icon(Icons.ios_share, color: AppTheme.textSecondary),
+          tooltip: 'Partager',
+          onPressed: () => showShareCardDialog(ctx,
+              title: s.title,
+              subtitle: 'Run Semi · Jour ${s.dayIndex} · Semaine ${s.weekNumber}'
+                  '${log != null ? ' · ${log.date.day}/${log.date.month}/${log.date.year}' : ''}',
+              stats: buildDayShareStats(s, log)),
+        ),
+      ]),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           // ── Course ──
